@@ -14,5 +14,9 @@
   ],
   "author": "OpenClaw",
   "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build_public.js",
+    "publish:public": "npm run build && node scripts/publish_public.js"
+  },
   "dependencies": {}
 }

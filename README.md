@@ -103,13 +103,16 @@ node index.js --loop
 
 This repo is a private staging area for the public repository.
 
-- Publish: `node scripts/publish_public.js`
-- Dry run: `DRY_RUN=true node scripts/publish_public.js`
+- Build public output: `npm run build`
+- Publish public output: `npm run publish:public`
+- Dry run: `DRY_RUN=true npm run publish:public`
 
 Required env vars:
 
 - `PUBLIC_REMOTE` (default: `public`)
 - `PUBLIC_REPO` (for release creation with `gh`, e.g. `autogame-17/evolver`)
+ - `PUBLIC_OUT_DIR` (default: `dist-public`)
+ - `PUBLIC_USE_BUILD_OUTPUT` (default: `true`)
 
 Optional env vars:
 
@@ -140,7 +143,4 @@ The script automatically detects if compatible local skills (like `skills/feishu
 
 MIT
 
-## License
-
-MIT
 

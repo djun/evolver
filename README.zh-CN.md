@@ -71,13 +71,16 @@ node index.js --loop
 
 本仓库作为 public 仓库的私有维护区。
 
-- 发布：`node scripts/publish_public.js`
-- 演练：`DRY_RUN=true node scripts/publish_public.js`
+- 构建公开产物：`npm run build`
+- 发布公开产物：`npm run publish:public`
+- 演练：`DRY_RUN=true npm run publish:public`
 
 必填环境变量：
 
 - `PUBLIC_REMOTE`（默认：`public`）
 - `PUBLIC_REPO`（用于 `gh release create`，例如 `autogame-17/evolver`）
+- `PUBLIC_OUT_DIR`（默认：`dist-public`）
+- `PUBLIC_USE_BUILD_OUTPUT`（默认：`true`）
 
 可选环境变量：
 

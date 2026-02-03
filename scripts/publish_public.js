@@ -1,4 +1,7 @@
 const { execSync, spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 function run(cmd, opts = {}) {
   const { dryRun = false } = opts;
@@ -54,6 +57,33 @@ function ensureTagAvailable(tag, dryRun) {
   }
 }
 
+function ensureDir(dir, dryRun) {
+  if (dryRun) return;
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+}
+
+function rmDir(dir, dryRun) {
+  if (dryRun) return;
+  if (!fs.existsSync(dir)) return;
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+function copyDir(src, dest, dryRun) {
+  if (dryRun) return;
+  if (!fs.existsSync(src)) throw new Error(`Missing build output dir: ${src}`);
+  ensureDir(dest, dryRun);
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const ent of entries) {
+    const s = path.join(src, ent.name);
+    const d = path.join(dest, ent.name);
+    if (ent.isDirectory()) copyDir(s, d, dryRun);
+    else if (ent.isFile()) {
+      ensureDir(path.dirname(d), dryRun);
+      fs.copyFileSync(s, d);
+    }
+  }
+}
+
 function createReleaseWithGh({ repo, tag, title, notes, notesFile, dryRun }) {
   if (!repo || !tag) return;
   if (!hasCommand('gh')) {
@@ -74,29 +104,64 @@ function main() {
   const sourceBranch = process.env.SOURCE_BRANCH || 'main';
   const publicRemote = process.env.PUBLIC_REMOTE || 'public';
   const publicBranch = process.env.PUBLIC_BRANCH || 'main';
+  const publicRepo = process.env.PUBLIC_REPO || '';
+  const outDir = process.env.PUBLIC_OUT_DIR || 'dist-public';
+  const useBuildOutput = String(process.env.PUBLIC_USE_BUILD_OUTPUT || 'true').toLowerCase() === 'true';
+
+  // If publishing build output, require a repo URL or GH repo slug for cloning.
+  if (useBuildOutput) {
+    requireEnv('PUBLIC_REPO', publicRepo);
+  }
 
   const releaseTag = process.env.RELEASE_TAG || '';
   const releaseTitle = process.env.RELEASE_TITLE || '';
   const releaseNotes = process.env.RELEASE_NOTES || '';
   const releaseNotesFile = process.env.RELEASE_NOTES_FILE || '';
   const releaseCreate = String(process.env.RELEASE_CREATE || '').toLowerCase() === 'true';
-  const publicRepo = process.env.PUBLIC_REPO || '';
 
   ensureClean(dryRun);
   ensureBranch(sourceBranch, dryRun);
-  ensureRemote(publicRemote, dryRun);
   ensureTagAvailable(releaseTag, dryRun);
 
-  run(`git push ${publicRemote} ${sourceBranch}:${publicBranch}`, { dryRun });
+  if (!useBuildOutput) {
+    ensureRemote(publicRemote, dryRun);
+    run(`git push ${publicRemote} ${sourceBranch}:${publicBranch}`, { dryRun });
+  } else {
+    const tmpBase = path.join(os.tmpdir(), 'evolver-public-publish');
+    const tmpRepoDir = path.join(tmpBase, `repo_${Date.now()}`);
+    const buildAbs = path.resolve(process.cwd(), outDir);
+
+    rmDir(tmpRepoDir, dryRun);
+    ensureDir(tmpRepoDir, dryRun);
+
+    run(`git clone --depth 1 https://github.com/${publicRepo}.git "${tmpRepoDir}"`, { dryRun });
+    run(`git -C "${tmpRepoDir}" checkout -B ${publicBranch}`, { dryRun });
+
+    // Replace repo contents with build output (except .git)
+    if (!dryRun) {
+      const entries = fs.readdirSync(tmpRepoDir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (ent.name === '.git') continue;
+        fs.rmSync(path.join(tmpRepoDir, ent.name), { recursive: true, force: true });
+      }
+    }
+    copyDir(buildAbs, tmpRepoDir, dryRun);
+
+    run(`git -C "${tmpRepoDir}" add -A`, { dryRun });
+    const msg = releaseTag ? `Release ${releaseTag}` : `Publish build output`;
+    run(`git -C "${tmpRepoDir}" commit -m "${msg.replace(/"/g, '\\"')}"`, { dryRun });
+    run(`git -C "${tmpRepoDir}" push origin ${publicBranch}`, { dryRun });
+  }
 
   if (releaseTag) {
     const msg = releaseTitle || `Release ${releaseTag}`;
     run(`git tag -a ${releaseTag} -m "${msg.replace(/"/g, '\\"')}"`, { dryRun });
-    run(`git push ${publicRemote} ${releaseTag}`, { dryRun });
+    if (!useBuildOutput) {
+      run(`git push ${publicRemote} ${releaseTag}`, { dryRun });
+    }
   }
 
   if (releaseCreate) {
-    requireEnv('PUBLIC_REPO', publicRepo);
     createReleaseWithGh({
       repo: publicRepo,
       tag: releaseTag,
